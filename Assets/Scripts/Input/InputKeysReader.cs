@@ -1,0 +1,112 @@
+using Assets.Scripts.Cyphers;
+using Assets.Scripts.Save;
+using System;
+using System.Collections;
+using System.Diagnostics;
+using UnityEngine;
+
+public class InputKeysReader : InputReader
+{
+    public string Text { get => _text; }
+
+    public int TextLimit { get; private set; }
+
+    private readonly Array keyCodes = Enum.GetValues(typeof(KeyCode));
+
+    [SerializeField] private bool _isNeedToClear;
+    [SerializeField] private float _clearCheckDelayInMilliseconds;
+    [SerializeField] private float _maxUpdateTimeBeforeClearInMilliseconds;
+    protected string _text = "";
+    private Stopwatch _stopwatch = new Stopwatch();
+
+    public void SetTextLimit(int num) => TextLimit = num;
+
+    public void Restart()
+    {
+        StopAllCoroutines();
+        ResetTimer();
+        _text = "";
+
+        if (_isNeedToClear)
+            StartCoroutine(ClearNotUpdatedText());
+    }
+
+    protected override void ProcessCurrentPressedKeys()
+    {
+        if (_mustBeWatched)
+        {
+            if (FindAnyObjectByType<Raycast>().GetPlayerTarget()?.Target != _watchedObject)
+                return;
+        }
+
+        if (Input.anyKeyDown)
+        {
+            foreach (KeyCode keyCode in keyCodes)
+            {
+                if (Input.GetKeyDown(keyCode))
+                {
+                    if (keyCode == KeyCode.Backspace)
+                        RemoveLastSym();
+
+                    var key = GetAlphabetSymbolFromKeyCode(keyCode);
+
+                    if (key != null && Text.Length <= TextLimit)
+                        AddSym((char)key);
+                }
+            }
+        }
+    }
+
+    private void ResetTimer()
+    {
+        _stopwatch.Reset();
+        _stopwatch.Start();
+    }
+
+    public void RemoveLastSym()
+    {
+        if (_text.Length > 0)
+        {
+            _text = _text.Remove(_text.Length - 1, 1);
+            ResetTimer();
+            _afterUpdate?.Invoke();
+            return;
+        }
+    }
+
+    public void AddSym(char key)
+    {
+        ResetTimer();
+
+        _text += key;
+
+        _afterUpdate?.Invoke();
+    }
+
+    private char? GetAlphabetSymbolFromKeyCode(KeyCode keyCode)
+    {
+        bool isUpper = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        Localization localization = GameSaves.Instance.Localization;
+        char? letter = AlphabetManager.ConvertToLetter(keyCode, localization);
+
+        if (letter == null)
+            return null;
+
+        return isUpper ?
+               letter :
+               char.ToLower((char)letter);
+    }
+
+    private IEnumerator ClearNotUpdatedText()
+    {
+        yield return new WaitForSeconds(_clearCheckDelayInMilliseconds / 1000);
+
+        if(_stopwatch.ElapsedMilliseconds >= _maxUpdateTimeBeforeClearInMilliseconds)
+        {
+            _text = "";
+            _afterUpdate?.Invoke();
+        }
+
+        StartCoroutine(ClearNotUpdatedText());
+    }
+}
